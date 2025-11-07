@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ping Pong — Single File Game</title>
+  <style>
+    :root{ --bg:#0f1724; --panel:#071126; --accent:#06b6d4; --muted:#94a3b8; }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,var(--bg),#071427);display:flex;align-items:center;justify-content:center;padding:24px;color:#e6eef6}
+    .wrapper{width:100%;max-width:1000px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:10px;align-items:center}
+    button,select,input[type=range]{background:var(--panel);border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:8px 10px;border-radius:8px}
+    button:hover{cursor:pointer;opacity:0.95}
+    #gameCanvas{display:block;width:100%;height:520px;border-radius:8px;background:linear-gradient(180deg,#031020,#05172b);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02)}
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+    .score{font-weight:700;color:var(--accent)}
+    label{font-size:13px;color:var(--muted)}
+    .kbd{background:#071827;padding:4px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.02);font-family:monospace}
+    @media (max-width:640px){#gameCanvas{height:380px}}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <header>
+      <h1>Ping Pong — JS + Canvas (Single file)</h1>
+      <div class="controls">
+        <button id="startBtn">Start</button>
+        <button id="pauseBtn">Pause</button>
+        <button id="resetBtn">Reset</button>
+        <label title="AI difficulty"><span class="small">AI</span>
+          <select id="aiSelect">
+            <option value="0.98">Easy</option>
+            <option value="0.985" selected>Medium</option>
+            <option value="0.99">Hard</option>
+          </select>
+        </label>
+        <label class="small">Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></label>
+      </div>
+    </header>
+
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+    <div class="footer">
+      <div>
+        <span class="small">Controls:</span>
+        <span class="kbd">W</span> / <span class="kbd">S</span> (Left)  •  <span class="kbd">↑</span> / <span class="kbd">↓</span> (Right)  •  <span class="kbd">P</span> Pause
+      </div>
+      <div>
+        <span class="small">Score:</span>
+        <span class="score" id="scoreDisplay">0 — 0</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Ping Pong — JavaScript + Canvas (single file)
+  (function(){
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI elements
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const aiSelect = document.getElementById('aiSelect');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const vol = document.getElementById('vol');
+
+    // Game state
+    let running = false;
+    let paused = false;
+
+    // Resolution independent scaling
+    let DPR = Math.max(1, window.devicePixelRatio || 1);
+    function resizeCanvas(){
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * DPR);
+      canvas.height = Math.floor(rect.height * DPR);
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Game constants
+    const PADDLE_WIDTH = 12;
+    const PADDLE_HEIGHT = 100;
+    const BALL_SIZE = 20;
+
+    // Entities
+    const leftPaddle = { x: 24, y: (canvas.height/DPR)/2 - PADDLE_HEIGHT/2, w: PADDLE_WIDTH, h: PADDLE_HEIGHT, dy: 0, speed: 7 };
+    const rightPaddle = { x: (canvas.width/DPR) - 24 - PADDLE_WIDTH, y: (canvas.height/DPR)/2 - PADDLE_HEIGHT/2, w: PADDLE_WIDTH, h: PADDLE_HEIGHT, dy: 0, speed: 6 };
+    const ball = { x: (canvas.width/DPR)/2, y: (canvas.height/DPR)/2, size: BALL_SIZE, vx: 6*(Math.random()<0.5?1:-1), vy: 3*(Math.random()<0.5?1:-1) };
+
+    let score = { left: 0, right: 0 };
+
+    function resetPositions(){
+      const H = canvas.height/DPR, W = canvas.width/DPR;
+      leftPaddle.y = H/2 - leftPaddle.h/2;
+      rightPaddle.x = W - 24 - rightPaddle.w;
+      rightPaddle.y = H/2 - rightPaddle.h/2;
+      ball.x = W/2; ball.y = H/2;
+      // randomize serve direction towards last scorer
+      const dir = Math.random()<0.5?1:-1;
+      ball.vx = 6*dir; ball.vy = (Math.random()*4 - 2);
+    }
+
+    // Input
+    const keys = {};
+    window.addEventListener('keydown', (e)=>{
+      keys[e.key.toLowerCase()] = true;
+      if(e.key === 'p' || e.key === 'P') togglePause();
+    });
+    window.addEventListener('keyup', (e)=>{ keys[e.key.toLowerCase()] = false; });
+
+    // Basic sounds (using oscillator) — lightweight and in-document
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+    function beep(freq, time=0.06){
+      if(!audioCtx) audioCtx = new AudioCtx();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.value = vol.value;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + time);
+      o.stop(audioCtx.currentTime + time + 0.02);
+    }
+
+    // AI behaviour
+    function updateAI(){
+      // right paddle follows the ball with some smoothing/delay based on difficulty
+      const difficulty = parseFloat(aiSelect.value);
+      const target = ball.y - rightPaddle.h/2;
+      // move fractionally towards target
+      rightPaddle.y += (target - rightPaddle.y) * (1 - difficulty);
+      // clamp
+      clampPaddle(rightPaddle);
+    }
+
+    function clampPaddle(p){
+      const H = canvas.height/DPR;
+      if(p.y < 0) p.y = 0;
+      if(p.y + p.h > H) p.y = H - p.h;
+    }
+
+    function updatePlayer(){
+      // left paddle W/S
+      if(keys['w']) leftPaddle.y -= leftPaddle.speed;
+      if(keys['s']) leftPaddle.y += leftPaddle.speed;
+      // right paddle arrow keys for two-player (overrides AI)
+      if(keys['arrowup']) rightPaddle.y -= rightPaddle.speed;
+      if(keys['arrowdown']) rightPaddle.y += rightPaddle.speed;
+      clampPaddle(leftPaddle); clampPaddle(rightPaddle);
+    }
+
+    function updateBall(){
+      ball.x += ball.vx; ball.y += ball.vy;
+      const H = canvas.height/DPR, W = canvas.width/DPR;
+      // top/bottom
+      if(ball.y - ball.size/2 < 0){ ball.y = ball.size/2; ball.vy *= -1; beep(220); }
+      if(ball.y + ball.size/2 > H){ ball.y = H - ball.size/2; ball.vy *= -1; beep(220); }
+
+      // paddles collision
+      // left
+      if(ball.x - ball.size/2 < leftPaddle.x + leftPaddle.w &&
+         ball.y > leftPaddle.y && ball.y < leftPaddle.y + leftPaddle.h &&
+         ball.x > leftPaddle.x){
+        ball.x = leftPaddle.x + leftPaddle.w + ball.size/2; // nudge out
+        ball.vx = -ball.vx;
+        // add spin based on where it hit the paddle
+        const rel = (ball.y - (leftPaddle.y + leftPaddle.h/2)) / (leftPaddle.h/2);
+        ball.vy = rel * 6;
+        // slightly speed up
+        ball.vx *= 1; beep(440);
+      }
+      // right
+      if(ball.x + ball.size/2 > rightPaddle.x &&
+         ball.y > rightPaddle.y && ball.y < rightPaddle.y + rightPaddle.h &&
+         ball.x < rightPaddle.x + rightPaddle.w){
+        ball.x = rightPaddle.x - ball.size/2;
+        ball.vx = -ball.vx;
+        const rel = (ball.y - (rightPaddle.y + rightPaddle.h/2)) / (rightPaddle.h/2);
+        ball.vy = rel * 6;
+        ball.vx *= 1.06; beep(440);
+      }
+
+      // score
+      if(ball.x < -50){ // right scores
+        score.right += 1; beep(120,0.18); resetPositions();
+      }
+      if(ball.x > W + 50){ // left scores
+        score.left += 1; beep(120,0.18); resetPositions();
+      }
+
+      // cap speeds for stability
+      const maxV = 18;
+      ball.vx = Math.max(-maxV, Math.min(maxV, ball.vx));
+      ball.vy = Math.max(-maxV, Math.min(maxV, ball.vy));
+    }
+
+    // Drawing
+    function drawNet(){
+      const H = canvas.height/DPR, W = canvas.width/DPR;
+      ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      const seg = 18; const gap = 10; const segH = 12;
+      for(let y=0;y<H;y+=seg+gap){ ctx.fillRect(W/2 - 1, y, 2, segH); }
+      ctx.restore();
+    }
+
+    function drawRoundRect(x,y,w,h,r){
+      ctx.beginPath(); ctx.moveTo(x+r,y);
+      ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r);
+      ctx.closePath(); ctx.fill();
+    }
+
+    function render(){
+      const H = canvas.height/DPR, W = canvas.width/DPR;
+      // background
+      ctx.clearRect(0,0,W,H);
+      // subtle vignette
+      ctx.fillStyle = 'rgba(255,255,255,0.02)'; ctx.fillRect(0,0,W,H);
+
+      // net
+      drawNet();
+
+      // paddles
+      ctx.fillStyle = '#cbe8ef';
+      drawRoundRect(leftPaddle.x, leftPaddle.y, leftPaddle.w, leftPaddle.h, 6);
+      drawRoundRect(rightPaddle.x, rightPaddle.y, rightPaddle.w, rightPaddle.h, 6);
+
+      // ball
+      ctx.beginPath(); ctx.fillStyle = '#06b6d4'; ctx.arc(ball.x, ball.y, ball.size/2, 0, Math.PI*2); ctx.fill();
+
+      // scores (top center)
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '600 24px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(`${score.left}`, W/2 - 40, 40);
+      ctx.fillText(`${score.right}`, W/2 + 40, 40);
+
+      // small HUD
+      ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.font = '12px system-ui';
+      ctx.textAlign = 'left'; ctx.fillText('Ping Pong — JS + Canvas', 12, H - 12);
+
+      // update display
+      scoreDisplay.textContent = `${score.left} — ${score.right}`;
+    }
+
+    // Game loop
+    let lastTime = 0;
+    function loop(t){
+      if(!running) return;
+      if(paused){ lastTime = t; requestAnimationFrame(loop); return; }
+      const dt = t - lastTime; lastTime = t;
+
+      // update
+      updatePlayer();
+      // only run AI when player isn't controlling right paddle
+      if(!keys['arrowup'] && !keys['arrowdown']) updateAI();
+      updateBall();
+
+      // render
+      render();
+
+      requestAnimationFrame(loop);
+    }
+
+    // Controls
+    startBtn.addEventListener('click', ()=>{
+      if(!running){ running = true; paused = false; lastTime = performance.now(); requestAnimationFrame(loop); }
+    });
+    pauseBtn.addEventListener('click', ()=> togglePause());
+    resetBtn.addEventListener('click', ()=>{ score.left = 0; score.right = 0; resetPositions(); render(); });
+
+    function togglePause(){ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; }
+
+    // initialize
+    resetPositions(); render();
+
+    // helpful: start automatically on first user gesture to allow audio context
+    function userGesture(){ if(!running){ running = true; paused = false; lastTime = performance.now(); requestAnimationFrame(loop); }
+      window.removeEventListener('pointerdown', userGesture);
+    }
+    window.addEventListener('pointerdown', userGesture);
+
+    // expose a tiny debugging helper on window (optional)
+    window.__pingpong = { leftPaddle, rightPaddle, ball, score };
+  })();
+  </script>
+</body>
+</html>
