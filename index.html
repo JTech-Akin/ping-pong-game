@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ping Pong — Single File Game</title>
+  <title>Ping Pong — Web Game</title>
   <style>
     :root{ --bg:#0f1724; --panel:#071126; --accent:#06b6d4; --muted:#94a3b8; }
     html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
@@ -26,7 +26,7 @@
 <body>
   <div class="wrapper">
     <header>
-      <h1>Ping Pong — JS + Canvas (Single file)</h1>
+      <h1>Ping Pong — JS + Canvas</h1>
       <div class="controls">
         <button id="startBtn">Start</button>
         <button id="pauseBtn">Pause</button>
@@ -242,7 +242,7 @@
 
       // small HUD
       ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.font = '12px system-ui';
-      ctx.textAlign = 'left'; ctx.fillText('Ping Pong — JS + Canvas', 12, H - 12);
+      ctx.textAlign = 'left'; ctx.fillText('Ping Pong — JTech', 12, H - 12);
 
       // update display
       scoreDisplay.textContent = `${score.left} — ${score.right}`;
@@ -291,4 +291,5 @@
   </script>
 </body>
 </html>
+
 
